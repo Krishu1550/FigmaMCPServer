@@ -1,4 +1,5 @@
-﻿using Microsoft.Extensions.Configuration;
+using FigmaMcp.Application;
+using Microsoft.Extensions.Configuration;
 using System.Text.Json;
 
 namespace FigmaMcp.Infrastructure.Figma
@@ -8,21 +9,15 @@ namespace FigmaMcp.Infrastructure.Figma
         private readonly HttpClient _httpClient;
         private readonly IConfiguration _config;
 
+        // Optional server-wide fallback token (from appsettings / env var).
+        // Per-call tokens supplied via FigmaCallContext always win.
+        private readonly string? _configToken;
+
         public FigmaHttpClient(HttpClient httpClient, IConfiguration config)
         {
             _httpClient = httpClient;
             _config = config;
-
-            var token = config["Figma:Token"];
-
-            if (!string.IsNullOrEmpty(token))
-            {
-                // Figma personal access tokens are authenticated solely via the
-                // X-Figma-Token header. Do NOT also set Authorization: Bearer here —
-                // Figma's API treats that as an OAuth token and returns 401 even
-                // when a valid X-Figma-Token header is also present.
-                _httpClient.DefaultRequestHeaders.Add("X-Figma-Token", token);
-            }
+            _configToken = config["Figma:Token"];
         }
 
         /// <summary>
@@ -64,10 +59,34 @@ namespace FigmaMcp.Infrastructure.Figma
             return result ?? throw new InvalidOperationException("Failed to deserialize OAuth token response.");
         }
 
+        /// <summary>
+        /// Performs an authenticated GET against the Figma REST API.
+        ///
+        /// Token resolution order:
+        ///   1. <see cref="FigmaCallContext.Token"/> — set by the MCP tool for the current call.
+        ///   2. <c>Figma:Token</c> in appsettings / environment — server-wide fallback.
+        ///
+        /// A per-request <see cref="HttpRequestMessage"/> is used so the token is NEVER
+        /// written to <see cref="System.Net.Http.Headers.HttpRequestHeaders.Authorization"/>
+        /// or <c>DefaultRequestHeaders</c>, keeping calls fully isolated from each other.
+        /// </summary>
         public async Task<string> GetAsync(string url)
         {
-            var response = await _httpClient.GetAsync(url);
+            // Per-call token wins; fall back to the server-wide config token.
+            var token = FigmaCallContext.Token ?? _configToken;
 
+            if (string.IsNullOrEmpty(token))
+                throw new InvalidOperationException(
+                    "No Figma access token was provided. " +
+                    "Pass your personal access token as the 'figmaAccessToken' tool argument, " +
+                    "or set the Figma:Token configuration value.");
+
+            // Build a per-request message so the header is isolated to this call only.
+            // Do NOT use DefaultRequestHeaders — that would share the token across all callers.
+            using var request = new HttpRequestMessage(HttpMethod.Get, url);
+            request.Headers.Add("X-Figma-Token", token);
+
+            var response = await _httpClient.SendAsync(request);
             response.EnsureSuccessStatusCode();
 
             return await response.Content.ReadAsStringAsync();

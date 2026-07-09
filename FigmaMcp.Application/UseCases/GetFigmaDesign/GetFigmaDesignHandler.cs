@@ -1,4 +1,5 @@
-﻿using FigmaMcp.Application.Interfaces;
+using FigmaMcp.Application;
+using FigmaMcp.Application.Interfaces;
 
 namespace FigmaMcp.Application.UseCases.GetFigmaDesign
 {
@@ -13,6 +14,11 @@ namespace FigmaMcp.Application.UseCases.GetFigmaDesign
 
         public async Task<GetFigmaDesignResponse> Handle(GetFigmaDesignRequest request)
         {
+            // Propagate the caller's token into the async context so FigmaHttpClient
+            // picks it up on every downstream HTTP call within this invocation.
+            if (!string.IsNullOrEmpty(request.FigmaAccessToken))
+                FigmaCallContext.Token = request.FigmaAccessToken;
+
             string json;
 
             if (!string.IsNullOrEmpty(request.NodeId))

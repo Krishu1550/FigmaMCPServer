@@ -1,4 +1,4 @@
-﻿using FigmaMcp.Application.Interfaces;
+using FigmaMcp.Application.Interfaces;
 using FigmaMcp.Infrastructure.Caching;
 using FigmaMcp.Infrastructure.Figma;
 using FigmaMcp.Infrastructure.Logging;
@@ -26,12 +26,14 @@ namespace FigmaMcp.Infrastructure.DependencyInjection
             });
 
             // SERVICES
-            services.AddSingleton<FigmaApiClient>();
+            // Scoped (not Singleton) so each tool invocation gets its own instance
+            // and per-call AsyncLocal token context (FigmaCallContext) stays isolated.
+            services.AddScoped<FigmaApiClient>();
             services.AddSingleton<IFigmaUrlParser, FigmaUrlParser>();
 
             // INTERFACE IMPLEMENTATIONS
-            services.AddSingleton<IFigmaService, FigmaService>();
-            services.AddSingleton<IImageExporter, FigmaImageExporter>();
+            services.AddScoped<IFigmaService, FigmaService>();
+            services.AddScoped<IImageExporter, FigmaImageExporter>();
             services.AddSingleton<IDesignParser, FigmaDesignParser>();
             services.AddSingleton<IUiModelBuilder, UiModelBuilder>();
 
